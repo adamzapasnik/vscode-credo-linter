@@ -26,7 +26,7 @@ interface LintParameters {
 }
 
 export default class CredoProvider {
-  private static defaultCommand = 'mix credo';
+  private static defaultCommand = 'mix credo --strict';
   private static defaultMixEnv = 'test';
   private static defaultProjectDir = '';
   private static extensionId = 'Credo';
