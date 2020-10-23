@@ -33,7 +33,7 @@
         "credo.command": {
           "type": "string",
           "scope": "resource",
-          "default": "mix credo",
+          "default": "mix credo --strict",
           "description": "Credo command (don't use format option)",
           "minLength": 1
         },
