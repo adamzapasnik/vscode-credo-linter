@@ -146,8 +146,10 @@ export default class CredoProvider {
       const options = { cwd: cwd, env: { ...process.env, MIX_ENV: mixEnv } };
 
       let command = config.command || CredoProvider.defaultCommand;
-      command += ' --format=json ';
-      command += textDocument ? textDocument.fileName : '';
+      command += ' --format=json --mute-exit-status ';
+      if (textDocument) {
+        command += `--files-included ${textDocument.fileName}`;
+      }
 
       try {
         cp.exec(command, options, (error, stdout, stderr) => {
