@@ -3,7 +3,7 @@
   "displayName": "Credo Linter",
   "description": "An extension to display credo remarks in vscode.",
   "author": "Adam Zapaśnik",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "publisher": "adamzapasnik",
   "homepage": "https://github.com/adamzapasnik/vscode-credo-linter",
