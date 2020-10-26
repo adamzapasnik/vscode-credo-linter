@@ -2,6 +2,7 @@ import * as cp from 'child_process';
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 
 const enum Setting {
   Enable = 'enable',
@@ -18,6 +19,7 @@ interface CredoConfig {
   uri_path: string;
   command: string;
   diagnosticCollection: vscode.DiagnosticCollection;
+  credoCompiled: boolean;
 }
 interface LintParameters {
   textDocument?: vscode.TextDocument;
@@ -33,13 +35,19 @@ export default class CredoProvider {
   private static extensionSettings = 'credo';
 
   private configs: CredoConfig[];
+  private channel: vscode.OutputChannel;
+  private context: vscode.ExtensionContext;
 
-  constructor() {
+  constructor(context: vscode.ExtensionContext) {
     this.configs = [];
+    this.channel = vscode.window.createOutputChannel('Credo Linter');
+    this.context = context;
+    context.subscriptions.push(this, this.channel);
+    this.logError = this.logError.bind(this);
   }
 
-  public activate(subscriptions: vscode.Disposable[]) {
-    subscriptions.push(this);
+  public activate() {
+    const { subscriptions } = this.context;
 
     subscriptions.push(
       vscode.workspace.onDidChangeWorkspaceFolders((event: vscode.WorkspaceFoldersChangeEvent) => {
@@ -80,28 +88,35 @@ export default class CredoProvider {
 
   private disposeConfig(workspaceFolder: vscode.WorkspaceFolder): void {
     const config = this.getWorkspaceConfig(workspaceFolder);
-    config.diagnosticCollection.dispose();
-    this.configs = this.configs.filter((config) => config.uri_path != workspaceFolder.uri.path);
+    if (config) {
+      config.diagnosticCollection?.dispose();
+      this.configs = this.configs.filter((config) => config.uri_path != workspaceFolder.uri.path);
+    }
   }
 
   private configChanged(uri: vscode.Uri): void {
     const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
     workspaceFolder && this.loadConfiguration(workspaceFolder);
   }
+
   private loadConfiguration(workspaceFolder: vscode.WorkspaceFolder): void {
+    this.disposeConfig(workspaceFolder);
+
     const vsConfig = vscode.workspace.getConfiguration(CredoProvider.extensionSettings, workspaceFolder);
     const config = this.getWorkspaceConfig(workspaceFolder);
+    const credoMixPath = path.join(workspaceFolder.uri.fsPath, 'deps', 'credo', 'mix.exs');
 
-    if (vsConfig) {
-      config.enabled = vsConfig.get(Setting.Enable, true);
-      config.command = vsConfig.get(Setting.Command, CredoProvider.defaultCommand);
-      config.mixEnv = vsConfig.get(Setting.MixEnv, CredoProvider.defaultMixEnv);
-      config.projectDir = vsConfig.get(Setting.ProjectDir, CredoProvider.defaultProjectDir);
-    }
+    config.enabled = vsConfig.get(Setting.Enable, true);
+    config.command = vsConfig.get(Setting.Command, CredoProvider.defaultCommand);
+    config.mixEnv = vsConfig.get(Setting.MixEnv, CredoProvider.defaultMixEnv);
+    config.projectDir = vsConfig.get(Setting.ProjectDir, CredoProvider.defaultProjectDir);
+    config.diagnosticCollection = vscode.languages.createDiagnosticCollection(CredoProvider.extensionId);
     config.invalidCommand = false;
-    config.diagnosticCollection?.clear();
-    if (!config.diagnosticCollection) {
-      config.diagnosticCollection = vscode.languages.createDiagnosticCollection(CredoProvider.extensionId);
+    config.credoCompiled = false;
+
+    if (!fs.existsSync(credoMixPath) && config.enabled) {
+      this.channel.appendLine("Credo wasn't found in deps. Disabled.");
+      config.enabled = false;
     }
 
     this.configs.push(config);
@@ -112,7 +127,7 @@ export default class CredoProvider {
       // because all workspace json response doesn't contain full information like the per textDocument one
       this.executeLint({ workspaceFolder, config })
         .then(() => vscode.workspace.textDocuments.forEach(this.triggerLint, this))
-        .catch(this.showError);
+        .catch(this.logError);
     }
   }
 
@@ -133,7 +148,7 @@ export default class CredoProvider {
     if (!config.enabled) return;
     if (config.invalidCommand) return;
 
-    this.executeLint({ textDocument, workspaceFolder, config }).catch(this.showError);
+    this.executeLint({ textDocument, workspaceFolder, config }).catch(this.logError);
   }
 
   private executeLint({ textDocument, workspaceFolder, config }: LintParameters): Promise<void> {
@@ -151,12 +166,23 @@ export default class CredoProvider {
         command += `--files-included ${textDocument.fileName}`;
       }
 
+      if (!config.credoCompiled) {
+        const status = this.compileCredo(command, options);
+        if (status) {
+          config.credoCompiled = true;
+        } else {
+          config.invalidCommand = true;
+          reject();
+        }
+      }
+
+      this.channel.appendLine(`Executing command: ${command}`);
       try {
-        cp.exec(command, options, (error, stdout, stderr) => {
-          console.warn(error, stdout, stderr);
+        cp.exec(command, options, (_error, stdout, stderr) => {
           if (stderr) {
             config.invalidCommand = true;
 
+            this.logError(`Command ${command} returned stderr:`);
             return reject(stderr);
           }
 
@@ -199,22 +225,29 @@ export default class CredoProvider {
           reject('Something went wrong! Stdout is empty.');
         });
       } catch (error) {
+        this.logError(`Command ${command} didn't work:`);
         reject(error);
       }
     });
   }
+  private compileCredo(command: string, options: cp.ExecOptions): boolean {
+    try {
+      this.channel.appendLine(`Compilling deps with: MIX_ENV=${options.env?.MIX_ENV} and cwd=${options.cwd}`);
+      cp.execSync(command, options);
+      this.channel.appendLine('Compillation was successful');
+      return true;
+    } catch (error) {
+      this.channel.appendLine("Couldn't compile deps:");
+      this.logError(error);
+      return false;
+    }
+  }
 
-  private async showError(error: any): Promise<void> {
+  private async logError(error: any): Promise<void> {
     let message: string | null = error.message ? error.message : error;
 
-    if (!message) {
-      return;
-    }
-
-    const openSettings = 'Open Settings';
-
-    if ((await vscode.window.showInformationMessage(message, openSettings)) === openSettings) {
-      vscode.commands.executeCommand('workbench.action.openSettings', CredoProvider.extensionSettings);
+    if (message) {
+      this.channel.appendLine(message);
     }
   }
 }
