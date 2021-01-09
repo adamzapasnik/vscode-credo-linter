@@ -104,7 +104,7 @@ export default class CredoProvider {
 
     const vsConfig = vscode.workspace.getConfiguration(CredoProvider.extensionSettings, workspaceFolder);
     const config = this.getWorkspaceConfig(workspaceFolder);
-    const credoMixPath = path.join(workspaceFolder.uri.fsPath, 'deps', 'credo', 'mix.exs');
+    const workspacePath = workspaceFolder.uri.fsPath;
 
     config.enabled = vsConfig.get(Setting.Enable, true);
     config.command = vsConfig.get(Setting.Command, CredoProvider.defaultCommand);
@@ -113,6 +113,8 @@ export default class CredoProvider {
     config.diagnosticCollection = vscode.languages.createDiagnosticCollection(CredoProvider.extensionId);
     config.invalidCommand = false;
     config.credoCompiled = false;
+    const cwd = config.projectDir ? path.join(workspacePath, config.projectDir) : workspacePath;
+    const credoMixPath = path.join(cwd, 'deps', 'credo', 'mix.exs');
 
     if (!fs.existsSync(credoMixPath) && config.enabled) {
       this.channel.appendLine("Credo wasn't found in deps. Disabled.");
