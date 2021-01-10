@@ -2,6 +2,12 @@
 
 All notable changes to the vscode-credo-linter extension will be documented in this file.
 
+## v0.3.0 - 10 January 2021
+
+### Fixed
+
+- Fix broken `credo.projectDir` #26 Thanks to @aniravi24
+
 ## v0.2.0 - 26 October 2020
 
 ### Added
