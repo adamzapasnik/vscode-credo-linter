@@ -9,7 +9,7 @@
   "homepage": "https://github.com/adamzapasnik/vscode-credo-linter",
   "repository": "https://github.com/adamzapasnik/vscode-credo-linter",
   "engines": {
-    "vscode": "^1.46.0"
+    "vscode": "^1.52.0"
   },
   "categories": [
     "Linters"
