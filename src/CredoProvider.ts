@@ -182,10 +182,7 @@ export default class CredoProvider {
       try {
         cp.exec(command, options, (_error, stdout, stderr) => {
           if (stderr) {
-            config.invalidCommand = true;
-
             this.logError(`Command ${command} returned stderr:`);
-            return reject(stderr);
           }
 
           if (stdout) {
